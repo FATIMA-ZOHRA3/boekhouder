@@ -1,0 +1,575 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  email         String   @unique
+  role          String   @default("client") // client, bookkeeper, admin
+  company       String?
+  vatNumber     String?
+  kvkNumber     String?
+  username      String?  @unique
+  passwordHash  String?
+  isNew         Boolean  @default(true)
+  emailVerified Boolean  @default(false)
+  phone         String?
+  vatId         String?
+  vatObligation String?
+  iban          String?
+  bankName      String?
+  accountHolder String?
+  legalForm     String?
+  logoUrl       String?
+  purchaseEmail String?  // dedicated email for supplier invoices
+  // Reminder settings
+  reminderEnabled Boolean @default(false)
+  reminder1Days   Int     @default(7)
+  reminder2Days   Int     @default(14)
+  reminder3Days   Int     @default(21)
+  // Quotation settings
+  quotationValidityDays    Int     @default(30)
+  defaultQuotationEmailText String?
+  // Notification preferences (JSON string of enabled types)
+  notificationPrefs String?  // e.g. {"newSales":true,"newPurchase":true,"overdue":true,...}
+  createdAt     DateTime @default(now())
+
+  administrations    Administration[]
+  invoices           Invoice[]
+  customers          Customer[]
+  sessions           Session[]
+  verificationTokens VerificationToken[]
+  resetTokens        ResetToken[]
+  lineTemplates      LineTemplate[]
+  recurringInvoices  RecurringInvoice[]
+  quotations         Quotation[]
+  purchaseDocuments  PurchaseDocument[]
+  bankTransactions   BankTransaction[]
+  cashTransactions   CashTransaction[]
+  tasks              Task[]
+  conversations      Conversation[]
+  messages           Message[]
+  exceptionsReceived ExceptionItem[]   @relation("ExceptionForUser")
+  exceptionsCreated  ExceptionItem[]   @relation("ExceptionCreatedBy")
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+}
+
+model Administration {
+  id        String   @id @default(uuid())
+  clientId  String
+  taxType   String
+  createdAt DateTime @default(now())
+
+  client User @relation(fields: [clientId], references: [id])
+}
+
+model Customer {
+  id               String   @id @default(uuid())
+  userId           String
+  name             String
+  email            String?
+  phone            String?
+  address          String?
+  vatNumber        String?
+  paymentTermValue Int?
+  paymentTermUnit  String?  // "days", "weeks", "months"
+  // Default invoice line
+  defaultDescription String?
+  defaultUnitPrice   Float?
+  defaultVatRate     Float?
+  // Bookkeeping defaults (for future automation)
+  defaultVatCode       String?  // high, low, zero, exempt, reversed
+  defaultRevenueAccount String?  // e.g. "8000" for omzet
+  // Accountant access permission
+  accountantAccess     Boolean  @default(false) // customer grants accountant access to facturation
+  // KVK data
+  kvkNumber        String?
+  legalForm        String?
+  sbiCode          String?
+  sbiDescription   String?
+  city             String?
+  postalCode       String?
+  kvkLastSynced    DateTime?
+  kvkData          String?  // Full KVK response as JSON for reference
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user              User               @relation(fields: [userId], references: [id])
+  invoices          Invoice[]
+  recurringInvoices RecurringInvoice[]
+  quotations        Quotation[]
+}
+
+model Invoice {
+  id                String   @id @default(uuid())
+  clientId          String
+  customerId        String?
+  invoiceNumber     String
+  date              String
+  dueDate           String
+  customerName      String
+  customerAddress   String
+  subtotal          Float
+  vatAmount         Float
+  total             Float
+  paidAmount        Float    @default(0)
+  status            String   @default("draft")
+  bookkeepingStatus String   @default("pending") // pending, to_book, booked
+  notes             String?
+  category          String?
+  vatType           String?  // high, low, zero, exempt, reversed
+  bookedAt          DateTime?
+  isCredit          Boolean  @default(false)
+  originalInvoiceId  String?
+  sourceQuotationId  String?
+  remindersSent      Int      @default(0)
+  createdAt          DateTime @default(now())
+
+  client          User          @relation(fields: [clientId], references: [id])
+  customer        Customer?     @relation(fields: [customerId], references: [id])
+  originalInvoice Invoice?      @relation("CreditInvoice", fields: [originalInvoiceId], references: [id])
+  creditInvoices  Invoice[]     @relation("CreditInvoice")
+  items           InvoiceItem[]
+  payments        Payment[]
+  invoiceNotes    InvoiceNote[]
+}
+
+model InvoiceNote {
+  id        String   @id @default(uuid())
+  invoiceId String
+  text      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  description String
+  quantity    Float
+  unitPrice   Float
+  vatRate     Float
+  category    String? // ledger account per line (e.g. "8000 Dienstverlening")
+  vatCode     String? // VAT code per line (e.g. "VH21 BTW hoog tarief 21%")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id        String   @id @default(uuid())
+  invoiceId String
+  amount    Float
+  date      String
+  notes     String?
+  createdAt DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model LineTemplate {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  description String
+  unitPrice   Float
+  vatRate     Float    @default(21)
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model RecurringInvoice {
+  id           String   @id @default(uuid())
+  clientId     String
+  customerId   String
+  interval     String   // "weekly", "monthly", "quarterly", "yearly"
+  intervalDays Int?
+  nextDate     String
+  templateData String   // JSON: { items, notes, customerName, customerAddress }
+  autoSend     Boolean  @default(false)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  client   User     @relation(fields: [clientId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+}
+
+model Quotation {
+  id                 String   @id @default(uuid())
+  clientId           String
+  customerId         String?
+  quotationNumber    String
+  date               String
+  validUntil         String
+  customerName       String
+  customerAddress    String
+  subtotal           Float
+  vatAmount          Float
+  total              Float
+  status             String   @default("draft") // draft, sent, accepted, expired, rejected, converted
+  notes              String?
+  acceptToken        String?  @unique
+  acceptedAt         DateTime?
+  sentAt             DateTime?
+  convertedInvoiceId String?
+  createdAt          DateTime @default(now())
+
+  client         User            @relation(fields: [clientId], references: [id])
+  customer       Customer?       @relation(fields: [customerId], references: [id])
+  items          QuotationItem[]
+  quotationNotes QuotationNote[]
+}
+
+model QuotationItem {
+  id          String @id @default(uuid())
+  quotationId String
+  description String
+  quantity    Float
+  unitPrice   Float
+  vatRate     Float
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+}
+
+model QuotationNote {
+  id          String   @id @default(uuid())
+  quotationId String
+  text        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  createdAt    DateTime @default(now())
+  lastActivity DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model VerificationToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model PurchaseDocument {
+  id             String   @id @default(uuid())
+  userId         String
+  fileName       String
+  fileUrl        String
+  fileType       String   // "pdf", "jpg", "png"
+  fileSize       Int      // bytes
+  status         String   @default("uploaded") // uploaded, processing, booked
+  label          String?  // user-friendly label
+  // Bookkeeping fields
+  supplierName   String?
+  invoiceNumber  String?  // supplier invoice number
+  amount         Float?   // excl. BTW
+  vatAmount      Float?
+  totalAmount    Float?   // incl. BTW
+  documentDate   String?
+  category       String?
+  description    String?
+  vatType        String?  // high, low, zero, exempt, reversed
+  notes          String?
+  dueDate        String?  // YYYY-MM-DD vervaldatum
+  source         String   @default("upload") // upload, email
+  reminderCount  Int      @default(0) // number of reminders received
+  reminderCosts  Float?   // aanmaningskosten
+  paidAt         DateTime?
+  bookedAt       DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Conversation {
+  id          String   @id @default(uuid())
+  userId      String   // the customer
+  subject     String
+  lastMessage String?
+  lastAt      DateTime @default(now())
+  unreadByUser Boolean @default(false)
+  unreadByAccountant Boolean @default(false)
+  contextType String?  // invoice, purchase, exception, general
+  contextId   String?
+  createdAt   DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id])
+  messages Message[]
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  senderUserId   String
+  senderRole     String   // "client" or "bookkeeper"
+  text           String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderUserId], references: [id])
+}
+
+model Task {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  description String?
+  date        String   // YYYY-MM-DD (the day this task is for)
+  time        String?  // HH:MM (optional time)
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  category    String?  // e.g. "boekhouding", "factuur", "algemeen"
+  assignedTo  String?  // "customer" or "accountant" — who should do this
+  createdByUserId String? // who created the task
+  sourceType  String?  // "exception", "system", "manual", "message"
+  sourceId    String?  // link to exception/invoice/message id
+  conversationId String? // link to conversation thread
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model ExceptionItem {
+  id              String   @id @default(uuid())
+  userId          String   // the customer this is for
+  createdByUserId String   // the accountant who created it
+  type            String   // missing_document, missing_payment
+  title           String
+  description     String
+  status          String   @default("waiting") // waiting, responded, resolved
+  // Source links (at least one should be set)
+  invoiceId       String?
+  purchaseDocId   String?
+  bankTransactionId String?
+  // Customer response
+  customerResponse String?  // selected option
+  customerNotes    String?
+  customerFileUrl  String?  // uploaded file
+  customerFileName String?
+  respondedAt      DateTime?
+  resolvedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user        User     @relation("ExceptionForUser", fields: [userId], references: [id])
+  createdBy   User     @relation("ExceptionCreatedBy", fields: [createdByUserId], references: [id])
+}
+
+model BankTransaction {
+  id              String   @id @default(uuid())
+  userId          String   // linked client/administration
+  bankAccount     String?  // IBAN of the account
+  transactionDate String   // YYYY-MM-DD
+  amount          Float
+  direction       String   // "debit" or "credit"
+  description     String
+  counterparty    String?  // tegenrekening / name
+  counterpartyAccount String? // tegenrekening IBAN
+  status          String   @default("new") // new, processing, matched, reconciled
+  importBatchId   String   // groups transactions from same import
+  importHash      String   // unique hash for duplicate detection
+  rawData         String?  // original MT940 line for reference
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, importHash])
+}
+
+model CashTransaction {
+  id              String   @id @default(uuid())
+  userId          String   // linked client/administration
+  transactionDate String   // YYYY-MM-DD
+  amount          Float
+  direction       String   // "in" or "out"
+  description     String
+  category        String?  // ledger account, e.g. "8000 Dienstverlening"
+  notes           String?
+  status          String   @default("open") // open, reconciled
+  reconciledAt    DateTime?
+  createdByUserId String?  // bookkeeper who entered it
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, transactionDate])
+}
+
+model LedgerAccount {
+  id               String   @id @default(uuid())
+  accountNumber    String   @unique
+  name             String
+  description      String?
+  accountType      String   // asset, liability, equity, revenue, expense, contra
+  category         String   // group label: "Vaste activa", "Omzet", etc.
+  statementSection String?  // balance sheet or P&L line reference
+  normalBalance    String   // debit, credit
+  isBalanceSheet   Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  isSystem         Boolean  @default(false)
+  sortOrder        Int      @default(0)
+
+  vatCodeId        String?
+  defaultVatCode   VatCode? @relation("LedgerDefaultVat", fields: [vatCodeId], references: [id])
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  vatCodesPosting  VatCode[] @relation("VatLedgerAccount")
+}
+
+model VatCode {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  name            String
+  description     String?
+  percentage      Float
+  type            String   // sales, purchase
+  rubricCode      String?  // Dutch VAT return rubric: "1a", "1b", "5b", etc.
+  isActive        Boolean  @default(true)
+  isSystem        Boolean  @default(false)
+
+  ledgerAccountId String?
+  ledgerAccount   LedgerAccount? @relation("VatLedgerAccount", fields: [ledgerAccountId], references: [id])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  defaultForAccounts LedgerAccount[] @relation("LedgerDefaultVat")
+}
+
+model Notification {
+  id          String    @id @default(uuid())
+  userId      String
+  type        String    // invoice_booked, reminder_sent, payment_received, bank_import, exception_created, task_assigned, system
+  category    String    // critical, warning, success, info, reminder, task, bookkeeping, payment, system
+  title       String
+  message     String
+  priority    Int       @default(0) // 0=normal, 1=high, 2=critical
+  isRead      Boolean   @default(false)
+  actionUrl   String?   // deep link to relevant section/page
+  actionLabel String?   // button label for the action
+  sourceType  String?   // invoice, purchase, bank, exception, task, conversation
+  sourceId    String?   // ID of the source entity
+  metadata    String?   // JSON string for extra data
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+model JournalEntry {
+  id          String    @id @default(uuid())
+  date        String    // YYYY-MM-DD
+  reference   String    // e.g. "MEM-001"
+  description String
+  type        String    @default("memoriaal") // memoriaal, beginbalans
+  totalDebit  Float     @default(0)
+  totalCredit Float     @default(0)
+  status      String    @default("draft") // draft, booked
+  bookedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  lines JournalLine[]
+}
+
+model JournalLine {
+  id             String  @id @default(uuid())
+  journalEntryId String
+  ledgerAccount  String
+  debit          Float   @default(0)
+  credit         Float   @default(0)
+  description    String?
+  vatCode        String?
+
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+}
+
+model SystemSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+// Task #5's knowledge base — the grounding facts the AI is allowed to rephrase when
+// explaining a tax/bookkeeping concept in plain language. This is deliberately a small,
+// human-curated table, not something the AI writes to itself: each row is one verified
+// fact, edited by the accountant via Admin > Fiscale begrippen. The AI never invents a
+// concept that isn't in here (see /api/ai/explain-tax-concept) — inactive rows are kept
+// for history but excluded from what can be explained.
+model TaxConcept {
+  id            String   @id @default(uuid())
+  key           String   @unique // stable identifier used by the frontend, e.g. "btw_ontvangen"
+  label         String   // short display name, e.g. "BTW ontvangen"
+  groundingFact String   // the ONLY fact the AI is allowed to rephrase for this concept
+  category      String   @default("btw") // btw, boekhouding, algemeen — for grouping in the admin UI
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Audit Log — see src/lib/auditLog.ts for the write/read helpers and the
+// design rationale (why userId is optional, why writes never throw, what
+// gets redacted). Records WHO did WHAT to WHICH object and WHEN, with an
+// optional before/after snapshot. Deliberately NOT logging reads — only
+// state-changing actions on the entities listed in AuditEntity.
+// ---------------------------------------------------------------------------
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String? // null for system/cron-initiated actions (e.g. recurring invoice processing)
+  userRole  String? // role at the time of the action (kept even if the user's role later changes)
+  action    String // "<entity>.<verb>" convention, e.g. "invoice.create", "exception.resolve"
+  entity    String // Prisma model name being acted on, e.g. "Invoice"
+  entityId  String
+  before    String? // JSON snapshot before the change, when relevant
+  after     String? // JSON snapshot after the change, when relevant
+  metadata  String? // JSON string for extra context (e.g. reason, source)
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model ResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}

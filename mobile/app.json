@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "Boekhouder",
+    "slug": "boekhouder-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "boekhouder",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#12355B"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "nl.boekhouder.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Boekhouder gebruikt de camera om inkoopdocumenten (bonnen en facturen) te scannen.",
+        "NSPhotoLibraryUsageDescription": "Boekhouder heeft toegang tot je foto's nodig om een gescand document te kunnen kiezen."
+      }
+    },
+    "android": {
+      "package": "nl.boekhouder.mobile",
+      "permissions": [
+        "CAMERA"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#12355B"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Boekhouder gebruikt de camera om inkoopdocumenten te scannen."
+        }
+      ],
+      "expo-asset"
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    }
+  }
+}
