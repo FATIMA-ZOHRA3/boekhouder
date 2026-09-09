@@ -6,3 +6,5 @@
 *.tsbuildinfo
 mobile/node_modules/
 mobile/.expo/
+.vercel
+.env*
