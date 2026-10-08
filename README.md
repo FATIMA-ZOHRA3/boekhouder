@@ -49,4 +49,4 @@ Add:
 - login/authentication
 - PDF invoice export
 - file upload for receipts and purchase invoices
-- real bookkeeping journal entries
+- real bookkeeping journal entries       
